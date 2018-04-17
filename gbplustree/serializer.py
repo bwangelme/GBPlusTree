@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 
 from uuid import UUID
 
-from gbplustree.const import ENDIAN
+from .const import ENDIAN
 
 try:
     import temporenc

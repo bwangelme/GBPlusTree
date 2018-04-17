@@ -4,7 +4,7 @@ import abc
 
 from typing import Optional
 
-from gbplustree.const import (
+from .const import (
     ENDIAN,
     TreeConf,
     USED_KEY_LENGTH_BYTES,
