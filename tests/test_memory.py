@@ -7,8 +7,10 @@ import pytest
 
 from gbplustree.memory import (
     FileMemory,
+    WAL,
     ReachedEndOfFile,
     open_file_in_dir,
+    write_to_file,
 )
 from gbplustree.const import (TreeConf)
 from gbplustree.serializer import IntSerializer
@@ -31,6 +33,28 @@ def test_file_memory_node():
     assert node == mem.get_node(3)
 
     mem.close()
+
+
+def test_wal_create_reopen_empty():
+    WAL(filename, 64)
+
+    wal = WAL(filename, 64)
+    assert wal._page_size == 64
+
+
+def test_write_to_file_multi_times():
+    def side_effect(*args, **kwargs):
+        if len(args) == 1:
+            data = args[0]
+        if len(data) > 5:
+            return 5
+        else:
+            return len(data)
+
+    mock_fd = mock.MagicMock()
+    mock_fd.write.side_effect = side_effect
+
+    write_to_file(mock_fd, None, b'abcdefg')
 
 
 def test_open_file_in_dir():
@@ -56,3 +80,9 @@ def test_open_file_in_dir_on_windows(_):
     assert isinstance(file_fd, io.FileIO)
     file_fd.close()
     assert dir_fd is None
+
+
+def test_file_memory_repr():
+    mem = FileMemory(filename, tree_conf)
+    assert repr(mem) == '<FileMemory: {}>'.format(filename)
+    mem.close()

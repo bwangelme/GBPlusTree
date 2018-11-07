@@ -12,7 +12,9 @@ from .node import Node
 from .const import (
     TreeConf,
     PAGE_REFERENCE_BYTES,
-    FRAME_TYPE_BYTES
+    FRAME_TYPE_BYTES,
+    OTHER_BYTES,
+    ENDIAN,
 )
 
 
@@ -47,6 +49,55 @@ def open_file_in_dir(path: str) -> Tuple[BinaryIO, Optional[int]]:
     return file_fd, dir_fd
 
 
+def write_to_file(file_fd: BinaryIO, dir_fileno: Optional[int],
+                  data: bytes, fsync: bool = True):
+    length_to_write = len(data)
+    written = 0
+
+    while written < length_to_write:
+        # 这里应该使用 += 保留写入的总字节数
+        written += file_fd.write(data[written:])
+    if fsync:
+        fsync_file_and_dir(file_fd.fileno(), dir_fileno)
+
+
+def fsync_file_and_dir(file_fileno: int, dir_fileno: Optional[int]):
+    """
+    os.fsync(fd) 函数
+
+    强行将文件描述符 fd 关联的文件写到磁盘上。
+    在 Unix 系统上，这将会调用原生的 fsync() 函数
+    在 Windows 系统上，将会调用 MS_commit() 函数
+
+    如果你创建的文件句柄是有缓存的，首先执行 f.flush()，然后再执行 os.fsync(fd)
+    确保和这个文件句柄关联的所有内部缓冲都被写到了磁盘上
+
+    :param file_fileno:
+    :param dir_fileno:
+    :return:
+    """
+    os.fsync(file_fileno)
+    if dir_fileno is not None:
+        os.fsync(dir_fileno)
+
+
+def read_from_file(file_fd: BinaryIO, start: int, stop: int) -> bytes:
+    length = stop - start
+    assert length >= 0
+
+    file_fd.seek(start)
+
+    data = bytes()
+    while file_fd.tell() < stop:
+        read_data = file_fd.read(stop - file_fd.tell())
+        if read_data == b'':
+            raise ReachedEndOfFile('Read until the end of file')
+        data += read_data
+    assert len(data) == length
+
+    return data
+
+
 class FileMemory:
 
     __slots__ = ['_filename', '_tree_conf', '_lock', '_cache', '_fd',
@@ -67,10 +118,16 @@ class FileMemory:
 
         self._wal = WAL(filename, tree_conf.page_size)
 
+    def __repr__(self):
+        return "<FileMemory: {}>".format(self._filename)
+
     def get_node(self, page: int) -> Node:
         pass
 
     def set_node(self, node: Node):
+        pass
+
+    def close(self):
         pass
 
 
@@ -114,3 +171,12 @@ class WAL:
                            "the B+Tree was not closed properly")
             self.need_recovery = True
             self._load_wal()
+
+    def _create_header(self):
+        data = self._page_size.to_bytes(OTHER_BYTES, ENDIAN)
+        self._fd.seek(0)
+        write_to_file(self._fd, self._dir_fd, data, True)
+
+    def _load_wal(self):
+        self._fd.seek(0)
+        header_data = read_from_file(self._fd, 0, OTHER_BYTES)
